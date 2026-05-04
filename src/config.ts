@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { loadRuntimeEnv } from "./load-env.js";
+
+loadRuntimeEnv();
 
 const DEFAULT_TRYCLOUDFLARE_ORIGIN_PATTERN = "^https://[a-z0-9-]+\\.trycloudflare\\.com$";
 

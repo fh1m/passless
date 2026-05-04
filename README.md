@@ -99,6 +99,15 @@ Environment variables (`.env`):
 - `CHALLENGE_TTL_SECONDS` = challenge expiry
 - `HTTPS_ENABLED` + `HTTPS_KEY_PATH` + `HTTPS_CERT_PATH` = optional direct HTTPS mode
 
+`.env` is loaded automatically at runtime (no manual `export` required). Load order is:
+
+1. `.env.<NODE_ENV>.local`
+2. `.env.local` (except during `NODE_ENV=test`)
+3. `.env.<NODE_ENV>`
+4. `.env`
+
+Existing shell environment variables always take precedence.
+
 ## Architecture overview
 
 ### Flow
@@ -191,6 +200,31 @@ EXPECTED_ORIGINS=https://<named-tunnel-hostname>
 ```
 
 Then restart the server after any `.env` change.
+
+### Troubleshooting: "Unable to get registration options"
+
+1. Confirm the app is loading your `.env` (run from repo root, and ensure `.env` exists there).
+2. Restart `npm run dev` after every `.env` edit.
+3. For **quick tunnel** (`*.trycloudflare.com`), use:
+
+```bash
+RP_ID=trycloudflare.com
+ALLOW_TRYCLOUDFLARE_ORIGIN=true
+TRYCLOUDFLARE_ORIGIN_PATTERN=^https://[a-z0-9-]+\.trycloudflare\.com$
+```
+
+`EXPECTED_ORIGIN` can stay `http://localhost:3000` if you also develop locally; quick-tunnel origins are allowed via the pattern above.
+
+4. Quick endpoint check (replace host):
+
+```bash
+curl -i -X POST "https://<your-tunnel-host>/api/register/options" \
+  -H "Origin: https://<your-tunnel-host>" \
+  -H "Content-Type: application/json" \
+  --data '{"username":"debug-user","displayName":"Debug User"}'
+```
+
+If this fails with origin/RP errors, your env values do not match the current tunnel setup.
 
 ## Git + GitHub workflow
 
