@@ -36,8 +36,16 @@ npm install
 
 ### 3. Configure environment
 
+Linux/macOS:
+
 ```bash
 cp .env.example .env
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
 ```
 
 Default values work for local development (`localhost`).

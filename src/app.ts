@@ -394,6 +394,12 @@ export function createApp(): express.Express {
       return;
     }
 
+    const user = getUserByUsername(username);
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
     const credentialResponse = parsed.data.response as Parameters<
       typeof verifyAuthenticationResponse
     >[0]["response"] &
@@ -401,6 +407,10 @@ export function createApp(): express.Express {
     const credential = getCredentialByCredentialId(credentialResponse.id);
     if (!credential) {
       res.status(404).json({ error: "Credential not found" });
+      return;
+    }
+    if (credential.user_id !== user.id) {
+      res.status(401).json({ error: "Credential does not belong to user" });
       return;
     }
 
@@ -424,12 +434,6 @@ export function createApp(): express.Express {
     }
 
     updateCredentialCounter(credential.credential_id, verification.authenticationInfo.newCounter);
-    const user = getUserByUsername(username);
-    if (!user) {
-      res.status(404).json({ error: "User not found" });
-      return;
-    }
-
     req.session.userId = user.id;
     req.session.username = user.username;
     res.json({ verified: true });
