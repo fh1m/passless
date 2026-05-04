@@ -27,6 +27,17 @@ describe("passless app", () => {
     expect(response.status).toBe(403);
   });
 
+  it("accepts register options with an allowed origin", async () => {
+    const suffix = randomUUID();
+    const response = await request(app)
+      .post("/api/register/options")
+      .set("origin", "http://localhost:3000")
+      .send({ username: `alice-${suffix}`, displayName: "Alice" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.challenge).toBeTypeOf("string");
+  });
+
   it("rejects authentication if credential does not belong to username", async () => {
     const suffix = randomUUID();
     const alice = ensureUser(`alice-${suffix}`, "Alice");

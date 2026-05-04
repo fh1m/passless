@@ -1,5 +1,27 @@
 import { z } from "zod";
 
+const DEFAULT_TRYCLOUDFLARE_ORIGIN_PATTERN = "^https://[a-z0-9-]+\\.trycloudflare\\.com$";
+
+function normalizeOrigin(origin: string): string {
+  const trimmed = origin.trim();
+  if (!trimmed) {
+    throw new Error("Origin cannot be empty");
+  }
+  const parsed = new URL(trimmed);
+  return parsed.origin;
+}
+
+function parseOriginsCsv(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((origin) => normalizeOrigin(origin));
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().default("0.0.0.0"),
@@ -7,6 +29,12 @@ const envSchema = z.object({
   RP_NAME: z.string().default("Passless"),
   RP_ID: z.string().default("localhost"),
   EXPECTED_ORIGIN: z.string().default("http://localhost:3000"),
+  EXPECTED_ORIGINS: z.string().optional(),
+  ALLOW_TRYCLOUDFLARE_ORIGIN: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
+  TRYCLOUDFLARE_ORIGIN_PATTERN: z.string().default(DEFAULT_TRYCLOUDFLARE_ORIGIN_PATTERN),
   SESSION_SECRET: z.string().min(16).default("change-this-in-production-now"),
   DB_PATH: z.string().optional(),
   CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
@@ -23,8 +51,27 @@ if (!parsed.success) {
   throw new Error(`Invalid environment configuration: ${parsed.error.message}`);
 }
 
+const expectedOrigins = Array.from(
+  new Set([
+    normalizeOrigin(parsed.data.EXPECTED_ORIGIN),
+    ...parseOriginsCsv(parsed.data.EXPECTED_ORIGINS)
+  ])
+);
+
+let tryCloudflareOriginRegex: RegExp | null = null;
+if (parsed.data.ALLOW_TRYCLOUDFLARE_ORIGIN) {
+  try {
+    tryCloudflareOriginRegex = new RegExp(parsed.data.TRYCLOUDFLARE_ORIGIN_PATTERN);
+  } catch (error) {
+    throw new Error("Invalid TRYCLOUDFLARE_ORIGIN_PATTERN", { cause: error });
+  }
+}
+
 export const config = {
   ...parsed.data,
+  EXPECTED_ORIGIN: expectedOrigins[0],
+  EXPECTED_ORIGINS: expectedOrigins,
+  TRYCLOUDFLARE_ORIGIN_REGEX: tryCloudflareOriginRegex,
   DB_PATH:
     parsed.data.DB_PATH ?? (parsed.data.NODE_ENV === "test" ? ":memory:" : "./data/passless.db")
 };

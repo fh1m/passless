@@ -59,11 +59,45 @@ function normalizeUsername(username: string): string {
   return username.trim().toLowerCase();
 }
 
-function enforceOriginHeader(origin: string | undefined): boolean {
-  if (!origin) {
-    return false;
+function normalizeRequestOrigin(origin: string): string | null {
+  try {
+    const trimmedOrigin = origin.trim();
+    const parsedOrigin = new URL(trimmedOrigin).origin;
+    return parsedOrigin === trimmedOrigin ? parsedOrigin : null;
+  } catch {
+    return null;
   }
-  return origin === config.EXPECTED_ORIGIN;
+}
+
+function resolveAllowedOrigin(origin: string | undefined): string | null {
+  if (!origin) {
+    return null;
+  }
+
+  const normalizedOrigin = normalizeRequestOrigin(origin);
+  if (!normalizedOrigin) {
+    return null;
+  }
+
+  if (config.EXPECTED_ORIGINS.includes(normalizedOrigin)) {
+    return normalizedOrigin;
+  }
+
+  if (
+    config.ALLOW_TRYCLOUDFLARE_ORIGIN &&
+    config.TRYCLOUDFLARE_ORIGIN_REGEX?.test(normalizedOrigin)
+  ) {
+    return normalizedOrigin;
+  }
+
+  return null;
+}
+
+function expectedOriginsForVerification(origin: string): string | string[] {
+  const combinedOrigins = config.EXPECTED_ORIGINS.includes(origin)
+    ? config.EXPECTED_ORIGINS
+    : [...config.EXPECTED_ORIGINS, origin];
+  return combinedOrigins.length === 1 ? combinedOrigins[0] : combinedOrigins;
 }
 
 export function createApp(): express.Express {
@@ -101,16 +135,22 @@ export function createApp(): express.Express {
     res.type("html").send(
       layout(
         "Register passkey",
-        `<section>
+        `<section class="panel">
           <h1>Create passkey account</h1>
-          <p>Register your credential once, then sign in across browsers/devices.</p>
+          <p class="lede">Register your credential once, then sign in across browsers/devices.</p>
           <form id="register-form">
-            <label>Username<input required name="username" minlength="3" maxlength="64" /></label>
-            <label>Display name<input required name="displayName" minlength="1" maxlength="120" /></label>
+            <label>
+              Username
+              <input required name="username" minlength="3" maxlength="64" />
+            </label>
+            <label>
+              Display name
+              <input required name="displayName" minlength="1" maxlength="120" />
+            </label>
             <button type="submit">Create account + passkey</button>
           </form>
-          <p id="status" aria-live="polite"></p>
-          <p>Already registered? <a href="/login">Sign in</a></p>
+          <p id="status" class="status" aria-live="polite"></p>
+          <p class="meta">Already registered? <a href="/login">Sign in</a></p>
         </section>
         <script type="module">
           import { startRegistration } from "https://cdn.jsdelivr.net/npm/@simplewebauthn/browser/+esm";
@@ -155,15 +195,18 @@ export function createApp(): express.Express {
     res.type("html").send(
       layout(
         "Passkey login",
-        `<section>
+        `<section class="panel">
           <h1>Passless Login</h1>
-          <p>Use your previously registered passkey to sign in.</p>
+          <p class="lede">Use your previously registered passkey to sign in.</p>
           <form id="login-form">
-            <label>Username<input required name="username" minlength="3" maxlength="64" /></label>
+            <label>
+              Username
+              <input required name="username" minlength="3" maxlength="64" />
+            </label>
             <button type="submit">Sign in with passkey</button>
           </form>
-          <p id="status" aria-live="polite"></p>
-          <p>New here? <a href="/register">Create account</a></p>
+          <p id="status" class="status" aria-live="polite"></p>
+          <p class="meta">New here? <a href="/register">Create account</a></p>
         </section>
         <script type="module">
           import { startAuthentication } from "https://cdn.jsdelivr.net/npm/@simplewebauthn/browser/+esm";
@@ -223,12 +266,23 @@ export function createApp(): express.Express {
     res.type("html").send(
       layout(
         "Protected area",
-        `<section>
+        `<section class="panel">
           <h1>Authenticated</h1>
-          <p>Welcome, <strong>${escapeHtml(user.username)}</strong>.</p>
-          <p>Authenticator type: <strong>${escapeHtml(latestCredential?.device_type || "unknown")}</strong></p>
-          <p>Backed up: <strong>${latestCredential?.backed_up ? "yes" : "no"}</strong></p>
-          <p>Transports: <strong>${escapeHtml(transports)}</strong></p>
+          <p class="lede">Welcome, <strong>${escapeHtml(user.username)}</strong>.</p>
+          <dl class="info-list">
+            <div class="info-row">
+              <dt>Authenticator type</dt>
+              <dd>${escapeHtml(latestCredential?.device_type || "unknown")}</dd>
+            </div>
+            <div class="info-row">
+              <dt>Backed up</dt>
+              <dd>${latestCredential?.backed_up ? "yes" : "no"}</dd>
+            </div>
+            <div class="info-row">
+              <dt>Transports</dt>
+              <dd>${escapeHtml(transports)}</dd>
+            </div>
+          </dl>
           <form method="post" action="/logout">
             <button type="submit">Logout</button>
           </form>
@@ -249,7 +303,7 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/register/options", async (req, res) => {
-    if (!enforceOriginHeader(req.headers.origin)) {
+    if (!resolveAllowedOrigin(req.headers.origin)) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
     }
@@ -285,7 +339,8 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/register/verify", async (req, res) => {
-    if (!enforceOriginHeader(req.headers.origin)) {
+    const allowedOrigin = resolveAllowedOrigin(req.headers.origin);
+    if (!allowedOrigin) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
     }
@@ -313,7 +368,7 @@ export function createApp(): express.Express {
         typeof verifyRegistrationResponse
       >[0]["response"],
       expectedChallenge,
-      expectedOrigin: config.EXPECTED_ORIGIN,
+      expectedOrigin: expectedOriginsForVerification(allowedOrigin),
       expectedRPID: config.RP_ID,
       requireUserVerification: true
     });
@@ -340,7 +395,7 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/auth/options", async (req, res) => {
-    if (!enforceOriginHeader(req.headers.origin)) {
+    if (!resolveAllowedOrigin(req.headers.origin)) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
     }
@@ -377,7 +432,8 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/auth/verify", async (req, res) => {
-    if (!enforceOriginHeader(req.headers.origin)) {
+    const allowedOrigin = resolveAllowedOrigin(req.headers.origin);
+    if (!allowedOrigin) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
     }
@@ -417,7 +473,7 @@ export function createApp(): express.Express {
     const verification = await verifyAuthenticationResponse({
       response: credentialResponse,
       expectedChallenge,
-      expectedOrigin: config.EXPECTED_ORIGIN,
+      expectedOrigin: expectedOriginsForVerification(allowedOrigin),
       expectedRPID: config.RP_ID,
       requireUserVerification: true,
       credential: {

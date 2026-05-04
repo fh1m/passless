@@ -90,7 +90,10 @@ Environment variables (`.env`):
 - `HOST` / `PORT` = server bind address
 - `RP_NAME` = WebAuthn relying party name
 - `RP_ID` = WebAuthn RP ID (e.g., `localhost` or your tunnel host)
-- `EXPECTED_ORIGIN` = full origin used by the browser (must match actual origin)
+- `EXPECTED_ORIGIN` = primary full origin used by the browser (must match actual origin)
+- `EXPECTED_ORIGINS` = optional comma-separated extra allowed origins
+- `ALLOW_TRYCLOUDFLARE_ORIGIN` = `true` to allow Cloudflare quick tunnel origins (disabled by default)
+- `TRYCLOUDFLARE_ORIGIN_PATTERN` = regex for allowed quick tunnel origins (default: `^https://[a-z0-9-]+\.trycloudflare\.com$`)
 - `SESSION_SECRET` = strong random secret (required for secure sessions)
 - `DB_PATH` = SQLite file path (`:memory:` in tests by default)
 - `CHALLENGE_TTL_SECONDS` = challenge expiry
@@ -164,6 +167,30 @@ EXPECTED_ORIGIN=https://<your-tunnel-hostname>
 ```
 
 4. Restart app and test from different browsers/devices.
+
+### Quick tunnel caveat (`trycloudflare.com`)
+
+`cloudflared tunnel --url ...` creates a different hostname each run. If you keep strict exact origin checks, WebAuthn option requests will fail after hostname changes.
+
+Use one of these safe setups:
+
+1. **Preferred for stable testing**: create a named tunnel with a fixed hostname and keep `EXPECTED_ORIGIN` exact.
+2. **Quick tunnel mode**: keep `RP_ID=trycloudflare.com` and enable scoped quick-tunnel allowlist:
+
+```bash
+RP_ID=trycloudflare.com
+ALLOW_TRYCLOUDFLARE_ORIGIN=true
+TRYCLOUDFLARE_ORIGIN_PATTERN=^https://[a-z0-9-]+\.trycloudflare\.com$
+```
+
+Optional: keep local dev available at the same time:
+
+```bash
+EXPECTED_ORIGIN=http://localhost:3000
+EXPECTED_ORIGINS=https://<named-tunnel-hostname>
+```
+
+Then restart the server after any `.env` change.
 
 ## Git + GitHub workflow
 
