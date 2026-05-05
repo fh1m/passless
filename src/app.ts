@@ -90,6 +90,10 @@ function resolveAllowedOrigin(origin: string | undefined): string | null {
     return normalizedOrigin;
   }
 
+  if (config.ALLOW_NGROK_ORIGIN && config.NGROK_ORIGIN_REGEX?.test(normalizedOrigin)) {
+    return normalizedOrigin;
+  }
+
   return null;
 }
 
@@ -98,6 +102,34 @@ function expectedOriginsForVerification(origin: string): string | string[] {
     ? config.EXPECTED_ORIGINS
     : [...config.EXPECTED_ORIGINS, origin];
   return combinedOrigins.length === 1 ? combinedOrigins[0] : combinedOrigins;
+}
+
+function isDynamicTunnelHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return (
+    normalized.endsWith(".trycloudflare.com") ||
+    normalized.endsWith(".ngrok-free.app") ||
+    normalized.endsWith(".ngrok.io") ||
+    normalized.endsWith(".ngrok.app")
+  );
+}
+
+function resolveEffectiveRpId(allowedOrigin: string): string {
+  const hostname = new URL(allowedOrigin).hostname;
+  return isDynamicTunnelHostname(hostname) ? hostname : config.RP_ID;
+}
+
+function resolveAllowedOriginContext(
+  origin: string | undefined
+): { allowedOrigin: string; effectiveRpId: string } | null {
+  const allowedOrigin = resolveAllowedOrigin(origin);
+  if (!allowedOrigin) {
+    return null;
+  }
+  return {
+    allowedOrigin,
+    effectiveRpId: resolveEffectiveRpId(allowedOrigin)
+  };
 }
 
 export function createApp(): express.Express {
@@ -303,7 +335,8 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/register/options", async (req, res) => {
-    if (!resolveAllowedOrigin(req.headers.origin)) {
+    const originContext = resolveAllowedOriginContext(req.headers.origin);
+    if (!originContext) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
     }
@@ -322,7 +355,7 @@ export function createApp(): express.Express {
 
     const options = await generateRegistrationOptions({
       rpName: config.RP_NAME,
-      rpID: config.RP_ID,
+      rpID: originContext.effectiveRpId,
       userName: user.username,
       userDisplayName: user.display_name,
       userID: new TextEncoder().encode(user.id),
@@ -339,8 +372,8 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/register/verify", async (req, res) => {
-    const allowedOrigin = resolveAllowedOrigin(req.headers.origin);
-    if (!allowedOrigin) {
+    const originContext = resolveAllowedOriginContext(req.headers.origin);
+    if (!originContext) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
     }
@@ -368,8 +401,8 @@ export function createApp(): express.Express {
         typeof verifyRegistrationResponse
       >[0]["response"],
       expectedChallenge,
-      expectedOrigin: expectedOriginsForVerification(allowedOrigin),
-      expectedRPID: config.RP_ID,
+      expectedOrigin: expectedOriginsForVerification(originContext.allowedOrigin),
+      expectedRPID: originContext.effectiveRpId,
       requireUserVerification: true
     });
     if (!verification.verified || !verification.registrationInfo) {
@@ -395,7 +428,8 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/auth/options", async (req, res) => {
-    if (!resolveAllowedOrigin(req.headers.origin)) {
+    const originContext = resolveAllowedOriginContext(req.headers.origin);
+    if (!originContext) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
     }
@@ -419,7 +453,7 @@ export function createApp(): express.Express {
     }
 
     const options = await generateAuthenticationOptions({
-      rpID: config.RP_ID,
+      rpID: originContext.effectiveRpId,
       timeout: 60000,
       userVerification: "required",
       allowCredentials: userCredentials.map((cred) => ({
@@ -432,8 +466,8 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/auth/verify", async (req, res) => {
-    const allowedOrigin = resolveAllowedOrigin(req.headers.origin);
-    if (!allowedOrigin) {
+    const originContext = resolveAllowedOriginContext(req.headers.origin);
+    if (!originContext) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
     }
@@ -473,8 +507,8 @@ export function createApp(): express.Express {
     const verification = await verifyAuthenticationResponse({
       response: credentialResponse,
       expectedChallenge,
-      expectedOrigin: expectedOriginsForVerification(allowedOrigin),
-      expectedRPID: config.RP_ID,
+      expectedOrigin: expectedOriginsForVerification(originContext.allowedOrigin),
+      expectedRPID: originContext.effectiveRpId,
       requireUserVerification: true,
       credential: {
         id: credential.credential_id,

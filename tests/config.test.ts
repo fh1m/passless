@@ -37,6 +37,17 @@ describe("config origin parsing", () => {
     expect(config.TRYCLOUDFLARE_ORIGIN_REGEX?.test("https://evil.example.com")).toBe(false);
   });
 
+  it("builds ngrok regex when enabled", async () => {
+    const config = await loadConfig({
+      ALLOW_NGROK_ORIGIN: "true"
+    });
+
+    expect(config.NGROK_ORIGIN_REGEX).not.toBeNull();
+    expect(config.NGROK_ORIGIN_REGEX?.test("https://abc123.ngrok-free.app")).toBe(true);
+    expect(config.NGROK_ORIGIN_REGEX?.test("https://demo.ngrok.io")).toBe(true);
+    expect(config.NGROK_ORIGIN_REGEX?.test("https://evil.example.com")).toBe(false);
+  });
+
   it("throws on invalid trycloudflare pattern", async () => {
     await expect(() =>
       loadConfig({
@@ -44,5 +55,14 @@ describe("config origin parsing", () => {
         TRYCLOUDFLARE_ORIGIN_PATTERN: "["
       })
     ).rejects.toThrow("Invalid TRYCLOUDFLARE_ORIGIN_PATTERN");
+  });
+
+  it("throws on invalid ngrok pattern", async () => {
+    await expect(() =>
+      loadConfig({
+        ALLOW_NGROK_ORIGIN: "true",
+        NGROK_ORIGIN_PATTERN: "["
+      })
+    ).rejects.toThrow("Invalid NGROK_ORIGIN_PATTERN");
   });
 });

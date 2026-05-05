@@ -94,6 +94,8 @@ Environment variables (`.env`):
 - `EXPECTED_ORIGINS` = optional comma-separated extra allowed origins
 - `ALLOW_TRYCLOUDFLARE_ORIGIN` = `true` to allow Cloudflare quick tunnel origins (disabled by default)
 - `TRYCLOUDFLARE_ORIGIN_PATTERN` = regex for allowed quick tunnel origins (default: `^https://[a-z0-9-]+\.trycloudflare\.com$`)
+- `ALLOW_NGROK_ORIGIN` = `true` to allow ngrok random hosts (disabled by default)
+- `NGROK_ORIGIN_PATTERN` = regex for allowed ngrok origins (default supports `*.ngrok-free.app`, `*.ngrok.io`, `*.ngrok.app`)
 - `SESSION_SECRET` = strong random secret (required for secure sessions)
 - `DB_PATH` = SQLite file path (`:memory:` in tests by default)
 - `CHALLENGE_TTL_SECONDS` = challenge expiry
@@ -154,77 +156,91 @@ Additional safeguards:
 - HTTP headers via Helmet
 - HttpOnly session cookie
 
-## Cross-device/browser testing (Cloudflare Tunnel)
+## Cross-device/browser testing (tunnels)
 
-1. Start local app:
+### Why browser shows RP ID/domain errors
+
+If you see browser errors like **"The relying party ID is not a registrable domain suffix of, nor equal to the current domain"**, your `RP_ID` does not match the page origin host rules.
+This app now derives RP ID from the request origin hostname for known tunnel hosts (for example `*.trycloudflare.com`, `*.ngrok-free.app`, `*.ngrok.io`).
+
+### Quick start: Cloudflare quick tunnel (`*.trycloudflare.com`)
+
+1. Start app:
+
+Linux/macOS:
 
 ```bash
 npm run dev
 ```
 
-2. Start tunnel to local port 3000:
+Windows PowerShell:
+
+```powershell
+npm run dev
+```
+
+2. Start tunnel:
+
+Linux/macOS:
 
 ```bash
 cloudflared tunnel --url http://localhost:3000
 ```
 
-3. Update `.env` to match tunnel hostname:
+Windows PowerShell:
 
-```bash
-RP_ID=<your-tunnel-hostname>
-EXPECTED_ORIGIN=https://<your-tunnel-hostname>
+```powershell
+cloudflared tunnel --url http://localhost:3000
 ```
 
-4. Restart app and test from different browsers/devices.
-
-### Quick tunnel caveat (`trycloudflare.com`)
-
-`cloudflared tunnel --url ...` creates a different hostname each run. If you keep strict exact origin checks, WebAuthn option requests will fail after hostname changes.
-
-Use one of these safe setups:
-
-1. **Preferred for stable testing**: create a named tunnel with a fixed hostname and keep `EXPECTED_ORIGIN` exact.
-2. **Quick tunnel mode**: keep `RP_ID=trycloudflare.com` and enable scoped quick-tunnel allowlist:
+3. Keep local defaults and allow quick-tunnel origins:
 
 ```bash
-RP_ID=trycloudflare.com
-ALLOW_TRYCLOUDFLARE_ORIGIN=true
-TRYCLOUDFLARE_ORIGIN_PATTERN=^https://[a-z0-9-]+\.trycloudflare\.com$
-```
-
-Optional: keep local dev available at the same time:
-
-```bash
+RP_ID=localhost
 EXPECTED_ORIGIN=http://localhost:3000
-EXPECTED_ORIGINS=https://<named-tunnel-hostname>
-```
-
-Then restart the server after any `.env` change.
-
-### Troubleshooting: "Unable to get registration options"
-
-1. Confirm the app is loading your `.env` (run from repo root, and ensure `.env` exists there).
-2. Restart `npm run dev` after every `.env` edit.
-3. For **quick tunnel** (`*.trycloudflare.com`), use:
-
-```bash
-RP_ID=trycloudflare.com
 ALLOW_TRYCLOUDFLARE_ORIGIN=true
 TRYCLOUDFLARE_ORIGIN_PATTERN=^https://[a-z0-9-]+\.trycloudflare\.com$
 ```
 
-`EXPECTED_ORIGIN` can stay `http://localhost:3000` if you also develop locally; quick-tunnel origins are allowed via the pattern above.
+4. Restart server after `.env` changes, then open the generated tunnel URL.
 
-4. Quick endpoint check (replace host):
+### Fallback quick start: ngrok HTTP tunnel
+
+1. Start app (`npm run dev`).
+2. Start tunnel:
+
+Linux/macOS:
 
 ```bash
-curl -i -X POST "https://<your-tunnel-host>/api/register/options" \
-  -H "Origin: https://<your-tunnel-host>" \
-  -H "Content-Type: application/json" \
-  --data '{"username":"debug-user","displayName":"Debug User"}'
+ngrok http 3000
 ```
 
-If this fails with origin/RP errors, your env values do not match the current tunnel setup.
+Windows PowerShell:
+
+```powershell
+ngrok http 3000
+```
+
+3. Allow ngrok random hosts in `.env`:
+
+```bash
+RP_ID=localhost
+EXPECTED_ORIGIN=http://localhost:3000
+ALLOW_NGROK_ORIGIN=true
+NGROK_ORIGIN_PATTERN=^https://[a-z0-9-]+\.(?:ngrok-free\.app|ngrok\.io|ngrok\.app)$
+```
+
+4. Restart server after `.env` changes.
+
+### Troubleshooting checklist (RP ID error focus)
+
+- Confirm address bar host exactly matches `EXPECTED_ORIGIN` host.
+- For quick/random tunnel hosts, keep `RP_ID=localhost`; RP ID is resolved from the request origin host.
+- If using ngrok random hosts, set `ALLOW_NGROK_ORIGIN=true`.
+- Do **not** reuse old tunnel values (quick tunnel hosts change every run).
+- Restart `npm run dev` after every `.env` edit.
+- Ensure `.env` is in repo root and loaded by the running process.
+- Test WebAuthn from the same origin you configured (no mixed localhost/tunnel tabs).
 
 ## Git + GitHub workflow
 

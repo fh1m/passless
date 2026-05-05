@@ -4,6 +4,8 @@ import { loadRuntimeEnv } from "./load-env.js";
 loadRuntimeEnv();
 
 const DEFAULT_TRYCLOUDFLARE_ORIGIN_PATTERN = "^https://[a-z0-9-]+\\.trycloudflare\\.com$";
+const DEFAULT_NGROK_ORIGIN_PATTERN =
+  "^https://[a-z0-9-]+\\.(?:ngrok-free\\.app|ngrok\\.io|ngrok\\.app)$";
 
 function normalizeOrigin(origin: string): string {
   const trimmed = origin.trim();
@@ -38,6 +40,11 @@ const envSchema = z.object({
     .optional()
     .transform((value) => value === "true"),
   TRYCLOUDFLARE_ORIGIN_PATTERN: z.string().default(DEFAULT_TRYCLOUDFLARE_ORIGIN_PATTERN),
+  ALLOW_NGROK_ORIGIN: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
+  NGROK_ORIGIN_PATTERN: z.string().default(DEFAULT_NGROK_ORIGIN_PATTERN),
   SESSION_SECRET: z.string().min(16).default("change-this-in-production-now"),
   DB_PATH: z.string().optional(),
   CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
@@ -70,11 +77,21 @@ if (parsed.data.ALLOW_TRYCLOUDFLARE_ORIGIN) {
   }
 }
 
+let ngrokOriginRegex: RegExp | null = null;
+if (parsed.data.ALLOW_NGROK_ORIGIN) {
+  try {
+    ngrokOriginRegex = new RegExp(parsed.data.NGROK_ORIGIN_PATTERN);
+  } catch (error) {
+    throw new Error("Invalid NGROK_ORIGIN_PATTERN", { cause: error });
+  }
+}
+
 export const config = {
   ...parsed.data,
   EXPECTED_ORIGIN: expectedOrigins[0],
   EXPECTED_ORIGINS: expectedOrigins,
   TRYCLOUDFLARE_ORIGIN_REGEX: tryCloudflareOriginRegex,
+  NGROK_ORIGIN_REGEX: ngrokOriginRegex,
   DB_PATH:
     parsed.data.DB_PATH ?? (parsed.data.NODE_ENV === "test" ? ":memory:" : "./data/passless.db")
 };
