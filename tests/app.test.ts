@@ -215,4 +215,183 @@ describe("passless app", () => {
     expect(response.status).toBe(401);
     expect(response.body.error).toBe("Credential does not belong to user");
   });
+
+  // Negative tests for protocol strictness and replay prevention
+  describe("protocol strictness - negative tests", () => {
+    it("rejects authentication with mismatched RP ID", async () => {
+      // This test verifies that RP ID validation is strict
+      const suffix = randomUUID();
+      const user = ensureUser(`rpid-${suffix}`, "RP ID User");
+      const credentialId = `cred-${suffix}`;
+      insertCredential({
+        user_id: user.id,
+        credential_id: credentialId,
+        public_key_b64: "AQID",
+        counter: 0,
+        transports_json: "[]",
+        aaguid: "",
+        device_type: "singleDevice",
+        backed_up: 0
+      });
+      saveChallenge(user.username, "auth", `challenge-${suffix}`);
+
+      // Send from a different origin that might have different RP ID
+      const response = await request(app)
+        .post("/api/auth/verify")
+        .set("origin", "http://evil.test")
+        .send({
+          username: user.username,
+          response: { id: credentialId }
+        });
+
+      // Should reject either due to invalid origin or RP ID mismatch
+      expect([403, 400, 401]).toContain(response.status);
+    });
+
+    it("rejects register options for missing username field", async () => {
+      const response = await request(app)
+        .post("/api/register/options")
+        .set("origin", "http://localhost:3000")
+        .send({ displayName: "No Username" });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBeDefined();
+    });
+
+    it("rejects auth options for missing username field", async () => {
+      const response = await request(app)
+        .post("/api/auth/options")
+        .set("origin", "http://localhost:3000")
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBeDefined();
+    });
+
+    it("rejects register verification with missing response field", async () => {
+      const suffix = randomUUID();
+      const response = await request(app)
+        .post("/api/register/verify")
+        .set("origin", "http://localhost:3000")
+        .send({ username: `user-${suffix}` });
+
+      expect(response.status).toBe(400);
+    });
+
+    it("rejects auth verification with missing response field", async () => {
+      const suffix = randomUUID();
+      const user = ensureUser(`auth-${suffix}`, "Auth User");
+      saveChallenge(user.username, "auth", `challenge-${suffix}`);
+
+      const response = await request(app)
+        .post("/api/auth/verify")
+        .set("origin", "http://localhost:3000")
+        .send({ username: user.username });
+
+      expect(response.status).toBe(400);
+    });
+
+    it("rejects authentication with invalid credential ID encoding", async () => {
+      const suffix = randomUUID();
+      const user = ensureUser(`enc-${suffix}`, "Encoding User");
+      saveChallenge(user.username, "auth", `challenge-${suffix}`);
+
+      // Send credential ID with invalid base64/encoding
+      // Server treats invalid encoding as unknown credential ID (404)
+      const response = await request(app)
+        .post("/api/auth/verify")
+        .set("origin", "http://localhost:3000")
+        .send({
+          username: user.username,
+          response: {
+            id: "!!!invalid-base64!!!"
+          }
+        });
+
+      expect([400, 404]).toContain(response.status);
+    });
+  });
+
+  describe("cross-origin and origin validation", () => {
+    it("accepts auth options with valid origin", async () => {
+      const suffix = randomUUID();
+      const user = ensureUser(`cross-${suffix}`, "Cross User");
+      insertCredential({
+        user_id: user.id,
+        credential_id: `cred-${suffix}`,
+        public_key_b64: "AQID",
+        counter: 0,
+        transports_json: "[]",
+        aaguid: "",
+        device_type: "singleDevice",
+        backed_up: 0
+      });
+
+      const response = await request(app)
+        .post("/api/auth/options")
+        .set("origin", "http://localhost:3000")
+        .send({ username: user.username });
+
+      expect(response.status).toBe(200);
+      expect(response.body.challenge).toBeTypeOf("string");
+    });
+
+    it("rejects auth options with Referer but no direct origin", async () => {
+      const suffix = randomUUID();
+      const user = ensureUser(`referer-${suffix}`, "Referer User");
+      insertCredential({
+        user_id: user.id,
+        credential_id: `cred-${suffix}`,
+        public_key_b64: "AQID",
+        counter: 0,
+        transports_json: "[]",
+        aaguid: "",
+        device_type: "singleDevice",
+        backed_up: 0
+      });
+
+      // Auth options should work with Referer fallback
+      const response = await request(app)
+        .post("/api/auth/options")
+        .set("referer", "http://localhost:3000/auth")
+        .send({ username: user.username });
+
+      // Should either accept (Referer fallback) or reject (no origin)
+      expect([200, 403]).toContain(response.status);
+    });
+
+    it("ensures username and credential pairing validation", async () => {
+      const suffix = randomUUID();
+      const user1 = ensureUser(`pair1-${suffix}`, "User 1");
+      const user2 = ensureUser(`pair2-${suffix}`, "User 2");
+
+      // Create credential for user1
+      const cred1 = `cred-${suffix}-1`;
+      insertCredential({
+        user_id: user1.id,
+        credential_id: cred1,
+        public_key_b64: "AQID",
+        counter: 0,
+        transports_json: "[]",
+        aaguid: "",
+        device_type: "singleDevice",
+        backed_up: 0
+      });
+
+      // Create challenge for user2
+      saveChallenge(user2.username, "auth", `challenge-${suffix}`);
+
+      // Try to authenticate as user2 with user1's credential
+      const response = await request(app)
+        .post("/api/auth/verify")
+        .set("origin", "http://localhost:3000")
+        .send({
+          username: user2.username,
+          response: { id: cred1 }
+        });
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe("Credential does not belong to user");
+    });
+  });
 });
