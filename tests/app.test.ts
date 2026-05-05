@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
-import request from "supertest";
-import { createApp } from "../src/app.js";
 import { randomUUID } from "node:crypto";
+import request from "supertest";
+import { describe, expect, it } from "vitest";
+import { createApp } from "../src/app.js";
 import { ensureUser, insertCredential, saveChallenge } from "../src/db.js";
 
 describe("passless app", () => {
@@ -24,7 +24,50 @@ describe("passless app", () => {
       .post("/api/register/options")
       .set("origin", "http://evil.test")
       .send({ username: "alice", displayName: "Alice" });
+
     expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Invalid origin header");
+  });
+
+  it("rejects register options when origin header is missing", async () => {
+    const response = await request(app)
+      .post("/api/register/options")
+      .send({ username: "alice", displayName: "Alice" });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Invalid origin header");
+  });
+
+  it("accepts register options when origin is missing but x-client-origin is valid", async () => {
+    const suffix = randomUUID();
+    const response = await request(app)
+      .post("/api/register/options")
+      .set("x-client-origin", "http://localhost:3000")
+      .send({ username: `xclient-${suffix}`, displayName: "X Client" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.challenge).toBeTypeOf("string");
+  });
+
+  it("accepts register options when origin is missing but referer is valid", async () => {
+    const suffix = randomUUID();
+    const response = await request(app)
+      .post("/api/register/options")
+      .set("referer", "http://localhost:3000/register")
+      .send({ username: `ref-${suffix}`, displayName: "Ref User" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.challenge).toBeTypeOf("string");
+  });
+
+  it("rejects register options when x-client-origin is invalid", async () => {
+    const response = await request(app)
+      .post("/api/register/options")
+      .set("x-client-origin", "https://evil.test")
+      .send({ username: "alice", displayName: "Alice" });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Invalid origin header");
   });
 
   it("accepts register options with an allowed origin", async () => {
@@ -36,6 +79,66 @@ describe("passless app", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.challenge).toBeTypeOf("string");
+  });
+
+  it("rejects register verification without an active challenge", async () => {
+    const response = await request(app)
+      .post("/api/register/verify")
+      .set("origin", "http://localhost:3000")
+      .send({
+        username: `alice-${randomUUID()}`,
+        response: { id: "credential-id" }
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Registration challenge missing or expired");
+  });
+
+  it("rejects authentication options when origin header is missing", async () => {
+    const suffix = randomUUID();
+    const user = ensureUser(`alice-${suffix}`, "Alice");
+    insertCredential({
+      user_id: user.id,
+      credential_id: `cred-${suffix}`,
+      public_key_b64: "AQID",
+      counter: 0,
+      transports_json: "[]",
+      aaguid: "",
+      device_type: "singleDevice",
+      backed_up: 0
+    });
+
+    const response = await request(app).post("/api/auth/options").send({ username: user.username });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Invalid origin header");
+  });
+
+  it("rejects authentication verification without an active challenge", async () => {
+    const suffix = randomUUID();
+    const user = ensureUser(`alice-${suffix}`, "Alice");
+    const credentialId = `cred-${suffix}`;
+    insertCredential({
+      user_id: user.id,
+      credential_id: credentialId,
+      public_key_b64: "AQID",
+      counter: 0,
+      transports_json: "[]",
+      aaguid: "",
+      device_type: "singleDevice",
+      backed_up: 0
+    });
+
+    const response = await request(app)
+      .post("/api/auth/verify")
+      .set("origin", "http://localhost:3000")
+      .send({
+        username: user.username,
+        response: { id: credentialId }
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Authentication challenge missing or expired");
   });
 
   it("rejects authentication if credential does not belong to username", async () => {

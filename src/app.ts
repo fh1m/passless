@@ -62,6 +62,9 @@ function normalizeUsername(username: string): string {
 function normalizeRequestOrigin(origin: string): string | null {
   try {
     const trimmedOrigin = origin.trim();
+    if (!trimmedOrigin || trimmedOrigin === "null") {
+      return null;
+    }
     const parsedOrigin = new URL(trimmedOrigin).origin;
     return parsedOrigin === trimmedOrigin ? parsedOrigin : null;
   } catch {
@@ -69,29 +72,61 @@ function normalizeRequestOrigin(origin: string): string | null {
   }
 }
 
-function resolveAllowedOrigin(origin: string | undefined): string | null {
-  if (!origin) {
+function normalizeRefererToOrigin(referer: string | undefined): string | null {
+  if (!referer) {
     return null;
   }
-
-  const normalizedOrigin = normalizeRequestOrigin(origin);
-  if (!normalizedOrigin) {
+  try {
+    return new URL(referer).origin;
+  } catch {
     return null;
   }
+}
 
+function headerValue(value: string | string[] | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function originIsAllowed(normalizedOrigin: string): boolean {
   if (config.EXPECTED_ORIGINS.includes(normalizedOrigin)) {
-    return normalizedOrigin;
+    return true;
   }
 
   if (
     config.ALLOW_TRYCLOUDFLARE_ORIGIN &&
     config.TRYCLOUDFLARE_ORIGIN_REGEX?.test(normalizedOrigin)
   ) {
-    return normalizedOrigin;
+    return true;
   }
 
   if (config.ALLOW_NGROK_ORIGIN && config.NGROK_ORIGIN_REGEX?.test(normalizedOrigin)) {
-    return normalizedOrigin;
+    return true;
+  }
+
+  return false;
+}
+
+function resolveAllowedOrigin(req: express.Request): string | null {
+  const candidates = [
+    headerValue(req.headers["x-client-origin"]),
+    headerValue(req.headers.origin),
+    normalizeRefererToOrigin(headerValue(req.headers.referer))
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    const normalizedOrigin = normalizeRequestOrigin(candidate);
+    if (!normalizedOrigin) {
+      continue;
+    }
+    if (originIsAllowed(normalizedOrigin)) {
+      return normalizedOrigin;
+    }
   }
 
   return null;
@@ -123,14 +158,14 @@ function resolveEffectiveRpId(allowedOrigin: string): string {
   if (isDynamicTunnelHostname(hostname)) {
     return hostname;
   }
-  // For non-tunnel flows, using the request origin host avoids invalid RP IDs caused by stale config.
+  // For non-tunnel flows, using request host avoids stale RP_ID misconfiguration.
   return normalizeRpIdHost(hostname);
 }
 
 function resolveAllowedOriginContext(
-  origin: string | undefined
+  req: express.Request
 ): { allowedOrigin: string; effectiveRpId: string } | null {
-  const allowedOrigin = resolveAllowedOrigin(origin);
+  const allowedOrigin = resolveAllowedOrigin(req);
   if (!allowedOrigin) {
     return null;
   }
@@ -207,7 +242,10 @@ export function createApp(): express.Express {
             try {
               const optionsRes = await fetch("/api/register/options", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Client-Origin": window.location.origin
+                },
                 body: JSON.stringify(payload)
               });
               if (!optionsRes.ok) {
@@ -220,7 +258,10 @@ export function createApp(): express.Express {
               const attResp = await startRegistration({ optionsJSON: options });
               const verifyRes = await fetch("/api/register/verify", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Client-Origin": window.location.origin
+                },
                 body: JSON.stringify({ username: payload.username, response: attResp })
               });
               const verify = await verifyRes.json();
@@ -267,7 +308,10 @@ export function createApp(): express.Express {
             try {
               const optionsRes = await fetch("/api/auth/options", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Client-Origin": window.location.origin
+                },
                 body: JSON.stringify(payload)
               });
               if (!optionsRes.ok) {
@@ -280,7 +324,10 @@ export function createApp(): express.Express {
               const authResp = await startAuthentication({ optionsJSON: options });
               const verifyRes = await fetch("/api/auth/verify", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Client-Origin": window.location.origin
+                },
                 body: JSON.stringify({ username: payload.username, response: authResp })
               });
               const verify = await verifyRes.json();
@@ -353,7 +400,7 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/register/options", async (req, res) => {
-    const originContext = resolveAllowedOriginContext(req.headers.origin);
+    const originContext = resolveAllowedOriginContext(req);
     if (!originContext) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
@@ -390,7 +437,7 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/register/verify", async (req, res) => {
-    const originContext = resolveAllowedOriginContext(req.headers.origin);
+    const originContext = resolveAllowedOriginContext(req);
     if (!originContext) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
@@ -446,7 +493,7 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/auth/options", async (req, res) => {
-    const originContext = resolveAllowedOriginContext(req.headers.origin);
+    const originContext = resolveAllowedOriginContext(req);
     if (!originContext) {
       res.status(403).json({ error: "Invalid origin header" });
       return;
@@ -484,7 +531,7 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/auth/verify", async (req, res) => {
-    const originContext = resolveAllowedOriginContext(req.headers.origin);
+    const originContext = resolveAllowedOriginContext(req);
     if (!originContext) {
       res.status(403).json({ error: "Invalid origin header" });
       return;

@@ -64,6 +64,7 @@ Open:
 ## Build, lint, and test
 
 ```bash
+npm run format
 npm run lint
 npm run build
 npm run test
@@ -110,6 +111,28 @@ Environment variables (`.env`):
 
 Existing shell environment variables always take precedence.
 
+## Optional local HTTPS setup
+
+WebAuthn works best on secure origins. `http://localhost` is allowed for local development, but use direct HTTPS if you want to test non-localhost behavior.
+
+1. Generate local certs (example with OpenSSL):
+
+```bash
+mkdir -p certs
+openssl req -x509 -newkey rsa:2048 -nodes -keyout certs/key.pem -out certs/cert.pem -days 365 -subj "/CN=localhost"
+```
+
+2. Update `.env`:
+
+```bash
+HTTPS_ENABLED=true
+HTTPS_KEY_PATH=./certs/key.pem
+HTTPS_CERT_PATH=./certs/cert.pem
+EXPECTED_ORIGIN=https://localhost:3000
+```
+
+3. Start app and open `https://localhost:3000/register`.
+
 ## Architecture overview
 
 ### Flow
@@ -143,15 +166,15 @@ e2e/
 Server verification explicitly checks:
 
 - challenge (fresh + expected)
-- origin (`EXPECTED_ORIGIN`)
-- RP ID (`RP_ID`)
+- origin (validated against configured allowlist/patterns)
+- RP ID (derived from validated request-origin host, with tunnel-aware handling)
 - user verification requirement
 - assertion signature validity
 - signature counter and counter update on success
 
 Additional safeguards:
 
-- Origin header enforcement for WebAuthn POST endpoints
+- Origin validation using `X-Client-Origin` → `Origin` → `Referer` origin candidates (strict allowlist/pattern checks)
 - Input validation with Zod
 - HTTP headers via Helmet
 - HttpOnly session cookie
@@ -243,6 +266,21 @@ NGROK_ORIGIN_PATTERN=^https://[a-z0-9-]+\.(?:ngrok-free\.app|ngrok\.io|ngrok\.ap
 - Ensure `.env` is in repo root and loaded by the running process.
 - Test WebAuthn from the same origin you configured (no mixed localhost/tunnel tabs).
 
+### Cross-browser/device guidance for Project 2 report
+
+Use this sequence for each browser/device pair (Chrome, Edge, Firefox/Safari if available, plus at least one mobile browser):
+
+1. Open `/register` and create a passkey.
+2. Sign out, then open `/login` and authenticate with that passkey.
+3. Confirm `/app` shows username plus authenticator fields (type, backed up, transports).
+4. Capture one success screenshot and one intentional failure screenshot.
+
+Recommended manual matrix:
+
+- Desktop Chrome (register + login)
+- Desktop Edge or Firefox (login with same passkey)
+- Mobile Chrome/Safari (login with cross-device passkey)
+
 ## Git + GitHub workflow
 
 Local git author is configured as:
@@ -269,5 +307,7 @@ gh repo create passless --public --source=. --remote=origin --push
 - [ ] Login from desktop browser(s)
 - [ ] Login from mobile browser(s)
 - [ ] Confirm protected page shows username + authenticator info
+- [ ] Verify strict origin enforcement (missing/invalid `Origin` is rejected)
+- [ ] Run negative API tests: `npm run test:single -- tests/app.test.ts`
 - [ ] Capture screenshots of successful/unsuccessful tests per browser/device
 - [ ] Document observed cross-browser issues in report
