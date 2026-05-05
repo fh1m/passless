@@ -114,9 +114,17 @@ function isDynamicTunnelHostname(hostname: string): boolean {
   );
 }
 
+function normalizeRpIdHost(hostname: string): string {
+  return hostname === "127.0.0.1" || hostname === "::1" ? "localhost" : hostname;
+}
+
 function resolveEffectiveRpId(allowedOrigin: string): string {
   const hostname = new URL(allowedOrigin).hostname;
-  return isDynamicTunnelHostname(hostname) ? hostname : config.RP_ID;
+  if (isDynamicTunnelHostname(hostname)) {
+    return hostname;
+  }
+  // For non-tunnel flows, using the request origin host avoids invalid RP IDs caused by stale config.
+  return normalizeRpIdHost(hostname);
 }
 
 function resolveAllowedOriginContext(
@@ -202,7 +210,12 @@ export function createApp(): express.Express {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
               });
-              if (!optionsRes.ok) throw new Error("Unable to get registration options");
+              if (!optionsRes.ok) {
+                const optionsError = await optionsRes
+                  .json()
+                  .catch(() => ({ error: "Unable to get registration options" }));
+                throw new Error(optionsError.error || "Unable to get registration options");
+              }
               const options = await optionsRes.json();
               const attResp = await startRegistration({ optionsJSON: options });
               const verifyRes = await fetch("/api/register/verify", {
@@ -257,7 +270,12 @@ export function createApp(): express.Express {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
               });
-              if (!optionsRes.ok) throw new Error("Unable to get authentication options");
+              if (!optionsRes.ok) {
+                const optionsError = await optionsRes
+                  .json()
+                  .catch(() => ({ error: "Unable to get authentication options" }));
+                throw new Error(optionsError.error || "Unable to get authentication options");
+              }
               const options = await optionsRes.json();
               const authResp = await startAuthentication({ optionsJSON: options });
               const verifyRes = await fetch("/api/auth/verify", {

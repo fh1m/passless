@@ -57,8 +57,8 @@ afterEach(() => {
 });
 
 describe("dynamic RP ID resolution", () => {
-  it("keeps configured RP ID for localhost flow", async () => {
-    const { app } = await loadApp();
+  it("uses localhost RP ID for localhost flow even if config RP_ID is stale", async () => {
+    const { app } = await loadApp({ RP_ID: "trycloudflare.com" });
     const suffix = randomUUID();
 
     const response = await request(app)

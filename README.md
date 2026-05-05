@@ -89,7 +89,7 @@ Environment variables (`.env`):
 - `NODE_ENV` = `development | test | production`
 - `HOST` / `PORT` = server bind address
 - `RP_NAME` = WebAuthn relying party name
-- `RP_ID` = WebAuthn RP ID (e.g., `localhost` or your tunnel host)
+- `RP_ID` = static fallback RP ID for fixed-domain deployments (for localhost/tunnels, runtime uses the request origin host)
 - `EXPECTED_ORIGIN` = primary full origin used by the browser (must match actual origin)
 - `EXPECTED_ORIGINS` = optional comma-separated extra allowed origins
 - `ALLOW_TRYCLOUDFLARE_ORIGIN` = `true` to allow Cloudflare quick tunnel origins (disabled by default)
@@ -236,6 +236,7 @@ NGROK_ORIGIN_PATTERN=^https://[a-z0-9-]+\.(?:ngrok-free\.app|ngrok\.io|ngrok\.ap
 
 - Confirm address bar host exactly matches `EXPECTED_ORIGIN` host.
 - For quick/random tunnel hosts, keep `RP_ID=localhost`; RP ID is resolved from the request origin host.
+- Do **not** set `RP_ID=trycloudflare.com` (browser rejects it for random subdomain pages).
 - If using ngrok random hosts, set `ALLOW_NGROK_ORIGIN=true`.
 - Do **not** reuse old tunnel values (quick tunnel hosts change every run).
 - Restart `npm run dev` after every `.env` edit.
