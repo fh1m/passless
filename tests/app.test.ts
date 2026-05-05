@@ -81,6 +81,35 @@ describe("passless app", () => {
     expect(response.body.challenge).toBeTypeOf("string");
   });
 
+  it("requires display name for first-time registration", async () => {
+    const suffix = randomUUID();
+    const response = await request(app)
+      .post("/api/register/options")
+      .set("origin", "http://localhost:3000")
+      .send({ username: `newuser-${suffix}` });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Display name is required for first-time registration");
+  });
+
+  it("allows additional device registration for existing username without display name", async () => {
+    const suffix = randomUUID();
+    const username = `multi-${suffix}`;
+
+    const first = await request(app)
+      .post("/api/register/options")
+      .set("origin", "http://localhost:3000")
+      .send({ username, displayName: "Multi Device User" });
+    expect(first.status).toBe(200);
+
+    const second = await request(app)
+      .post("/api/register/options")
+      .set("origin", "http://localhost:3000")
+      .send({ username });
+    expect(second.status).toBe(200);
+    expect(second.body.challenge).toBeTypeOf("string");
+  });
+
   it("rejects register verification without an active challenge", async () => {
     const response = await request(app)
       .post("/api/register/verify")
@@ -139,6 +168,23 @@ describe("passless app", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe("Authentication challenge missing or expired");
+  });
+
+  it("rejects authentication with unknown credential id", async () => {
+    const suffix = randomUUID();
+    const user = ensureUser(`alice-${suffix}`, "Alice");
+    saveChallenge(user.username, "auth", `challenge-${suffix}`);
+
+    const response = await request(app)
+      .post("/api/auth/verify")
+      .set("origin", "http://localhost:3000")
+      .send({
+        username: user.username,
+        response: { id: `non-existent-${suffix}` }
+      });
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toBe("Credential not found");
   });
 
   it("rejects authentication if credential does not belong to username", async () => {

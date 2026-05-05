@@ -186,6 +186,23 @@ Additional safeguards:
 If you see browser errors like **"The relying party ID is not a registrable domain suffix of, nor equal to the current domain"**, your `RP_ID` does not match the page origin host rules.
 This app now derives RP ID from the request origin hostname for known tunnel hosts (for example `*.trycloudflare.com`, `*.ngrok-free.app`, `*.ngrok.io`).
 
+### Recommended for final submission: named Cloudflare tunnel (fixed hostname)
+
+Use a fixed hostname so the same passkey remains valid across sessions/devices.
+
+1. Create a named tunnel and map a stable hostname in your Cloudflare zone (one-time setup).
+2. Run the tunnel with that hostname pointing to `http://localhost:3000`.
+3. Set `.env`:
+
+```bash
+RP_ID=<your-fixed-hostname>
+EXPECTED_ORIGIN=https://<your-fixed-hostname>
+```
+
+4. Keep `ALLOW_TRYCLOUDFLARE_ORIGIN=false` for this stable setup.
+
+This is the preferred way to satisfy the Project 2 multi-device requirement and bonus RP/origin correctness.
+
 ### Quick start: Cloudflare quick tunnel (`*.trycloudflare.com`)
 
 1. Start app:
@@ -227,6 +244,8 @@ TRYCLOUDFLARE_ORIGIN_PATTERN=^https://[a-z0-9-]+\.trycloudflare\.com$
 
 4. Restart server after `.env` changes, then open the generated tunnel URL.
 
+Important: quick tunnels generate a new hostname each run. Credentials created on an old hostname will not work on a different hostname.
+
 ### Fallback quick start: ngrok HTTP tunnel
 
 1. Start app (`npm run dev`).
@@ -254,6 +273,17 @@ NGROK_ORIGIN_PATTERN=^https://[a-z0-9-]+\.(?:ngrok-free\.app|ngrok\.io|ngrok\.ap
 ```
 
 4. Restart server after `.env` changes.
+
+### Username-based multi-device login workflow
+
+If passkeys are not synced automatically between devices, use this flow:
+
+1. On **Device A**, register username + display name.
+2. On **Device B**, attempt login with the same username.
+3. If browser says no matching passkey on Device B, open `/register` on Device B and register the **same username** (display name optional for existing user).
+4. Log in again with the same username on Device B.
+
+This keeps a single account username while storing multiple credentials (one per device if needed).
 
 ### Troubleshooting checklist (RP ID error focus)
 
@@ -301,13 +331,145 @@ Or with GitHub CLI:
 gh repo create passless --public --source=. --remote=origin --push
 ```
 
-## Assignment verification checklist
+## Submission checklist
 
-- [ ] Register passkey from desktop browser
-- [ ] Login from desktop browser(s)
-- [ ] Login from mobile browser(s)
-- [ ] Confirm protected page shows username + authenticator info
-- [ ] Verify strict origin enforcement (missing/invalid `Origin` is rejected)
-- [ ] Run negative API tests: `npm run test:single -- tests/app.test.ts`
-- [ ] Capture screenshots of successful/unsuccessful tests per browser/device
-- [ ] Document observed cross-browser issues in report
+### Core WebAuthn functionality
+
+- [ ] Register passkey from **at least one desktop browser** (Chrome, Edge, or Firefox)
+- [ ] Login from **at least two different desktop browsers** (e.g., Chrome + Edge/Firefox)
+- [ ] Login from **at least one mobile browser** (Chrome/Safari on Android/iOS)
+- [ ] Confirm protected `/app` page displays:
+  - Username
+  - Authenticator type (platform/cross-platform)
+  - Backed-up flag and transports if available
+
+### Protocol strictness verification
+
+- [ ] **RP ID validation**: Confirm `RP_ID` matches page origin host (non-localhost or fixed tunnel name)
+- [ ] **Origin validation**: Verify strict checking via:
+  - Test with correct origin → should succeed
+  - Test with mismatched origin (e.g., wrong tunnel URL or different device origin) → should be rejected
+- [ ] **Negative test: missing origin** → request without `Origin` header must be rejected
+- [ ] **Negative test: credential mismatch** → login attempt with wrong credential/user must fail
+- [ ] **Cross-device credential reuse**: Same passkey from Device A authenticates on Device B with same username
+
+### Evidence and reporting
+
+- [ ] Run test suite: `npm run test` (all API tests must pass)
+- [ ] Capture **success screenshot** per browser/device combo (register/login success)
+- [ ] Capture **failure screenshot** for at least one negative test
+- [ ] Screenshot shows browser address bar (verifying origin/RP ID matching domain)
+- [ ] Document RP/origin configuration and how it enables cross-device reuse
+
+## How to verify protocol strictness
+
+### 1. Local verification before tunnel deployment
+
+Start the server locally:
+
+```bash
+npm run dev
+```
+
+Run the automated negative test suite:
+
+```bash
+npm run test:single -- tests/app.test.ts
+```
+
+This tests:
+
+- Challenge validation (replay detection)
+- Origin mismatch rejection
+- RP ID hash verification
+- Signature counter enforcement
+- Invalid signature rejection
+
+### 2. Cross-origin rejection test (manual)
+
+With server running on `http://localhost:3000`:
+
+1. Open `http://localhost:3000/login` in your browser.
+2. Register or attempt login (succeeds if origin matches).
+3. On another machine (or different tunnel URL), try to POST to the verify endpoints with a spoofed `Origin` header:
+
+```bash
+curl -X POST http://localhost:3000/register/verify \
+  -H "Origin: https://attacker.com" \
+  -H "Content-Type: application/json" \
+  -d '{"response": {...}}'
+```
+
+Expected: **403 Forbidden** (origin rejected).
+
+### 3. RP ID / origin hostname matching (manual with tunnel)
+
+When deployed via tunnel (e.g., `https://myapp.trycloudflare.com`):
+
+1. Set `.env`:
+
+```bash
+RP_ID=myapp.trycloudflare.com
+EXPECTED_ORIGIN=https://myapp.trycloudflare.com
+ALLOW_TRYCLOUDFLARE_ORIGIN=false
+```
+
+2. Register passkey at `https://myapp.trycloudflare.com/register`.
+3. Browser should accept (RP ID matches hostname).
+4. Try accessing from a different tunnel URL (e.g., `https://other.trycloudflare.com`).
+5. Expected: browser error **"relying party ID is not a registrable domain suffix"**.
+
+This proves RP ID validation is enforced at the browser level and server-side verification rejects mismatched origins.
+
+### 4. Signature counter enforcement
+
+Run the test suite to confirm counter increments and replays are rejected:
+
+```bash
+npm run test:single -- tests/app.test.ts -t "counter"
+```
+
+The test verifies:
+
+- Counter starts at 0
+- Counter increments on each assertion
+- Assertion with stale counter is rejected (replay protection)
+
+## Screenshots and evidence guidance
+
+When filling out the report, include:
+
+1. **Registration success**
+   - Screenshot of browser at `https://<your-origin>/register` showing "Passkey registered" message
+   - Include address bar in screenshot (proves RP ID / origin matching)
+
+2. **Login success**
+   - Screenshot of browser at `https://<your-origin>/login` showing "Logged in" confirmation
+   - Screenshot of protected `/app` page showing username + authenticator details
+   - Address bar visible
+
+3. **Cross-device login**
+   - Same passkey used on different device/browser
+   - Screenshot from Device A showing login success
+   - Screenshot from Device B showing same username/passkey recognized
+
+4. **Negative test: missing origin**
+   - Screenshot of browser console or server logs showing origin validation rejection
+   - Or: curl output showing 403 response when `Origin` header missing
+
+5. **Negative test: credential mismatch**
+   - Screenshot showing login attempt with wrong username fails
+   - Or: API test output showing rejection
+
+## Project structure
+
+See above for file tree. Key WebAuthn endpoints:
+
+- `GET /register` — registration page
+- `GET /register/options` — get registration challenge (JSON)
+- `POST /register/verify` — verify attestation (JSON)
+- `GET /login` — login page
+- `GET /login/options` — get authentication challenge (JSON)
+- `POST /login/verify` — verify assertion (JSON)
+- `GET /app` — protected page (requires session)
+- `POST /logout` — clear session

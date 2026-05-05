@@ -26,7 +26,7 @@ import { escapeHtml, layout } from "./web.js";
 
 const registerSchema = z.object({
   username: z.string().trim().min(3).max(64),
-  displayName: z.string().trim().min(1).max(120)
+  displayName: z.string().trim().min(1).max(120).optional()
 });
 
 const loginSchema = z.object({
@@ -212,15 +212,15 @@ export function createApp(): express.Express {
         "Register passkey",
         `<section class="panel">
           <h1>Create passkey account</h1>
-          <p class="lede">Register your credential once, then sign in across browsers/devices.</p>
+          <p class="lede">Register your credential, then sign in with the same username across browsers/devices.</p>
           <form id="register-form">
             <label>
               Username
               <input required name="username" minlength="3" maxlength="64" />
             </label>
             <label>
-              Display name
-              <input required name="displayName" minlength="1" maxlength="120" />
+              Display name (required for first-time registration)
+              <input name="displayName" minlength="1" maxlength="120" />
             </label>
             <button type="submit">Create account + passkey</button>
           </form>
@@ -239,6 +239,9 @@ export function createApp(): express.Express {
               username: String(formData.get("username") || "").trim().toLowerCase(),
               displayName: String(formData.get("displayName") || "").trim()
             };
+            if (!payload.displayName) {
+              delete payload.displayName;
+            }
             try {
               const optionsRes = await fetch("/api/register/options", {
                 method: "POST",
@@ -335,7 +338,11 @@ export function createApp(): express.Express {
               status.textContent = "Authenticated. Redirecting...";
               window.location.href = "/app";
             } catch (error) {
-              status.textContent = error instanceof Error ? error.message : "Authentication failed";
+              if (error instanceof DOMException && error.name === "NotAllowedError") {
+                status.textContent = "No matching passkey was found on this device. Register this device using the same username.";
+              } else {
+                status.textContent = error instanceof Error ? error.message : "Authentication failed";
+              }
             }
           });
         </script>`
@@ -356,6 +363,7 @@ export function createApp(): express.Express {
     }
     const credentials = getCredentialsByUsername(user.username);
     const latestCredential = credentials[credentials.length - 1];
+    const credentialCount = credentials.length;
     const transports = latestCredential
       ? parseTransports(latestCredential.transports_json).join(", ")
       : "N/A";
@@ -367,6 +375,10 @@ export function createApp(): express.Express {
           <h1>Authenticated</h1>
           <p class="lede">Welcome, <strong>${escapeHtml(user.username)}</strong>.</p>
           <dl class="info-list">
+            <div class="info-row">
+              <dt>Registered passkeys</dt>
+              <dd>${credentialCount}</dd>
+            </div>
             <div class="info-row">
               <dt>Authenticator type</dt>
               <dd>${escapeHtml(latestCredential?.device_type || "unknown")}</dd>
@@ -412,7 +424,12 @@ export function createApp(): express.Express {
     }
 
     const username = normalizeUsername(parsed.data.username);
-    const user = ensureUser(username, parsed.data.displayName);
+    const existingUser = getUserByUsername(username);
+    if (!existingUser && !parsed.data.displayName) {
+      res.status(400).json({ error: "Display name is required for first-time registration" });
+      return;
+    }
+    const user = existingUser ?? ensureUser(username, parsed.data.displayName ?? username);
     const existingCreds = getCredentialsByUsername(user.username).map((cred) => ({
       id: cred.credential_id,
       transports: parseTransports(cred.transports_json)
