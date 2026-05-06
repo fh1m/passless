@@ -110,11 +110,11 @@ function originIsAllowed(normalizedOrigin: string): boolean {
 }
 
 function resolveAllowedOrigin(req: express.Request): string | null {
-  const candidates = [
-    headerValue(req.headers["x-client-origin"]),
-    headerValue(req.headers.origin),
-    normalizeRefererToOrigin(headerValue(req.headers.referer))
-  ];
+  const xClientOrigin = headerValue(req.headers["x-client-origin"]);
+  const originHeader = headerValue(req.headers.origin);
+  const refererHeader = headerValue(req.headers.referer);
+  
+  const candidates = [xClientOrigin, originHeader, normalizeRefererToOrigin(refererHeader)];
 
   for (const candidate of candidates) {
     if (!candidate) {
@@ -126,6 +126,19 @@ function resolveAllowedOrigin(req: express.Request): string | null {
     }
     if (originIsAllowed(normalizedOrigin)) {
       return normalizedOrigin;
+    }
+  }
+
+  // Only use fallback if NO origin headers were provided at all
+  if (!xClientOrigin && !originHeader && !refererHeader) {
+    const hostHeader = headerValue(req.headers.host);
+    if (hostHeader && !isDynamicTunnelHostname(hostHeader.split(":")[0])) {
+      const protocol = req.get("x-forwarded-proto") || (req.secure ? "https" : "http");
+      const fallbackOrigin = `${protocol}://${hostHeader}`;
+      const normalizedFallback = normalizeRequestOrigin(fallbackOrigin);
+      if (normalizedFallback && originIsAllowed(normalizedFallback)) {
+        return normalizedFallback;
+      }
     }
   }
 
