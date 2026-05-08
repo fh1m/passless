@@ -512,7 +512,7 @@ Key achievements:
 - ✓ Comprehensive cryptographic verification
 - ✓ Cross-device credential reuse via stable RP ID
 - ✓ Counter-based replay protection
-- ✓ Production-ready code quality (TypeScript, tests, linting)
+- ✓ Production-ready code quality (Python, tests, linting)
 - ✓ Deployment flexibility (localhost, tunnels, production domains)
 
 ## Appendix A: Running the Service
@@ -520,15 +520,16 @@ Key achievements:
 ### Quick Start
 
 ```bash
-npm install
-npm run build
-npm run start
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m src.server
 # Open http://localhost:3000/register
 ```
 
 ### Full Instructions
 
-See [DEPLOYMENT.md](../docs/DEPLOYMENT.md) for:
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for:
 
 - Local HTTPS setup
 - Cloudflare Tunnel (named and quick)
