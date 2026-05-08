@@ -129,8 +129,87 @@ ALLOW_NGROK_ORIGIN=true
 4. If using a named tunnel, keep `RP_ID` and `EXPECTED_ORIGIN` unchanged across devices.
 5. Confirm the protected page shows the username and authenticator metadata after login.
 
-## 7. Common origin issues
+## 7. Troubleshooting
 
-- `Invalid origin header` on localhost usually means `EXPECTED_ORIGIN` does not match the actual scheme/host/port.
-- If the site is reached through Cloudflare Tunnel, the browser origin must be allowed by the tunnel settings or explicit origin list.
+### "Invalid origin header" with localhost
+
+**Problem:** Registration or login fails with "Invalid origin header" error.
+
+**Solution:**
+1. Verify `.env` has correct origin:
+   ```bash
+   grep EXPECTED_ORIGIN .env
+   ```
+   Should show `EXPECTED_ORIGIN=http://localhost:3000` for HTTP access.
+
+2. Verify the scheme matches how you're accessing:
+   - `http://localhost:3000` (HTTP): use `EXPECTED_ORIGIN=http://localhost:3000`
+   - `https://localhost:3000` (HTTPS): set `HTTPS_ENABLED=true` and use `EXPECTED_ORIGIN=https://localhost:3000`
+
+3. Check no other process is using port 3000:
+   ```bash
+   lsof -i :3000  # macOS/Linux
+   netstat -ano | findstr :3000  # Windows
+   ```
+
+### "Invalid origin header" with Cloudflare Tunnel
+
+**Problem:** Accessing via tunnel URL (`https://xyz.trycloudflare.com`) fails with "Invalid origin header".
+
+**Solution:**
+1. Ensure tunnel origin support is enabled in `.env`:
+   ```env
+   ALLOW_TRYCLOUDFLARE_ORIGIN=true
+   ```
+
+2. Restart the Flask app after changing `.env`:
+   ```bash
+   # Stop the current process (Ctrl+C)
+   python -m src.server
+   ```
+
+3. The app should now accept origins matching `^https://[a-z0-9-]+\.trycloudflare\.com$`.
+
+4. When accessing via tunnel, use the **full HTTPS URL** provided by `cloudflared`:
+   ```
+   https://statement-neighbors-court-motivated.trycloudflare.com
+   ```
+   (Not `http://` or the localhost backend address)
+
+### "Passkey not found" across devices
+
+**Problem:** Register passkey on device A, try to use it on device B → "No matching passkey was found".
+
+**Solution:**
+- **With quick tunnel:** Hostnames change each tunnel session. Use a **named tunnel** for repeated cross-device testing.
+  ```bash
+  cloudflared tunnel create passless
+  cloudflared tunnel route dns passless passless.dev.local
+  cloudflared tunnel run passless --url http://localhost:3000
+  ```
+  Then set in `.env`:
+  ```env
+  RP_ID=passless.dev.local
+  EXPECTED_ORIGIN=https://passless.dev.local
+  ```
+
+- **With localhost:** Different devices can't reach `localhost:3000`. Always use a tunnel for multi-device testing.
+
+### Debug: Check what origin the backend sees
+
+Add this temporary debug in `.env` or pass as environment variable, then check logs:
+```env
+DEBUG=true
+```
+
+The Flask server will log the resolved origin for each request. Look for:
+```
+Resolved origin: https://xyz.trycloudflare.com
+RP ID selected: xyz.trycloudflare.com
+```
+
+## 8. Common origin issues
+
 - The browser sends `X-Client-Origin` from the page; the backend uses it before falling back to `Origin`, `Referer`, or `Host`.
+- In production, ensure firewall rules and reverse proxies preserve the original client origin in headers.
+- For proxy setups, enable `X-Forwarded-Proto` and `X-Forwarded-Host` and configure `ProxyFix` in the Flask app (already enabled).
