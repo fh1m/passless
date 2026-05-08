@@ -1,3 +1,5 @@
+"""Test support utilities for loading modules with custom environment."""
+
 from __future__ import annotations
 
 import importlib
@@ -7,7 +9,7 @@ from unittest.mock import patch
 
 
 BASE_ENV = {
-    "NODE_ENV": "test",
+    "APP_ENV": "test",
     "EXPECTED_ORIGIN": "http://localhost:3000",
     "RP_ID": "localhost",
     "SESSION_SECRET": "x" * 32,

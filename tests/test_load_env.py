@@ -19,7 +19,7 @@ class LoadEnvTests(unittest.TestCase):
             (env_dir / ".env.production.local").write_text("COMMON=production-local\n", encoding="utf-8")
 
             runtime_env: dict[str, str] = {"COMMON": "already-set"}
-            loaded = load_runtime_env(env_dir=env_dir, node_env="production", process_env=runtime_env)
+            loaded = load_runtime_env(env_dir=env_dir, app_env="production", process_env=runtime_env)
 
             self.assertEqual(
                 [Path(path).name for path in loaded],
@@ -36,7 +36,7 @@ class LoadEnvTests(unittest.TestCase):
             (env_dir / ".env").write_text("SOURCE=base\n", encoding="utf-8")
 
             runtime_env: dict[str, str] = {}
-            loaded = load_runtime_env(env_dir=env_dir, node_env="test", process_env=runtime_env)
+            loaded = load_runtime_env(env_dir=env_dir, app_env="test", process_env=runtime_env)
 
             self.assertEqual(loaded, [])
             self.assertNotIn("SOURCE", runtime_env)

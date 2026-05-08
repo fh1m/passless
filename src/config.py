@@ -1,3 +1,19 @@
+"""Configuration loading, validation, and app state.
+
+Environment variables are parsed into an immutable AppConfig dataclass that is
+shared by the Flask app and all request handlers.
+
+Key configuration areas:
+- app_env: deployment environment (development/test/production)
+- Origin validation: configured primary origin + pattern-based tunnel allowlist
+- RP ID resolution: dynamically selected based on request origin
+- Session and cookie security settings based on app_env
+- Optional local HTTPS via self-signed certificate paths
+
+The load_config() function is called once at module load time, so changes to
+environment variables after import have no effect.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -59,7 +75,7 @@ def _compile_regex(name: str, pattern: str) -> re.Pattern[str]:
 
 @dataclass(frozen=True)
 class AppConfig:
-    node_env: str
+    app_env: str
     host: str
     port: int
     rp_name: str
@@ -79,7 +95,7 @@ class AppConfig:
 
 
 def load_config() -> AppConfig:
-    node_env = os.environ.get("NODE_ENV", "development")
+    app_env = os.environ.get("APP_ENV", "development")
     host = os.environ.get("HOST", "0.0.0.0")
     port = _parse_int("PORT", os.environ.get("PORT"), 3000)
     rp_name = os.environ.get("RP_NAME", "Passless")
@@ -93,7 +109,7 @@ def load_config() -> AppConfig:
     allow_ngrok_origin = _parse_bool(os.environ.get("ALLOW_NGROK_ORIGIN"))
     ngrok_origin_pattern = os.environ.get("NGROK_ORIGIN_PATTERN", DEFAULT_NGROK_ORIGIN_PATTERN)
     session_secret = os.environ.get("SESSION_SECRET", "change-this-in-production-now")
-    db_path = os.environ.get("DB_PATH") or (":memory:" if node_env == "test" else "./data/passless.db")
+    db_path = os.environ.get("DB_PATH") or (":memory:" if app_env == "test" else "./data/passless.db")
     challenge_ttl_seconds = _parse_int(
         "CHALLENGE_TTL_SECONDS", os.environ.get("CHALLENGE_TTL_SECONDS"), 300
     )
@@ -120,7 +136,7 @@ def load_config() -> AppConfig:
         raise ValueError("SESSION_SECRET must be at least 16 characters")
 
     return AppConfig(
-        node_env=node_env,
+        app_env=app_env,
         host=host,
         port=port,
         rp_name=rp_name,

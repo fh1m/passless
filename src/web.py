@@ -1,3 +1,21 @@
+"""Server-rendered HTML pages for registration, login, and authenticated dashboard.
+
+Each page:
+1. Renders minimal semantic HTML with inline CSS
+2. Includes a <script type="module"> that uses @simplewebauthn/browser
+3. Implements the browser-side WebAuthn ceremony
+4. Handles UI state, errors, and user feedback
+
+Security:
+- HTML is escaped to prevent XSS
+- No form data is submitted directly; WebAuthn is the only auth mechanism
+- Sensitive data (challenges, credentials) never leaves the server
+- Session cookies are HttpOnly and Secure in production
+
+The JavaScript uses X-Client-Origin header so the backend can determine the
+browser's origin even when accessed through proxies or tunnels.
+"""
+
 from __future__ import annotations
 
 

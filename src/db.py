@@ -1,3 +1,24 @@
+"""SQLite persistence for users, credentials, and authentication challenges.
+
+Schema:
+- users: user_id (UUID), username (unique), display_name, created_at
+- credentials: credential_id (unique), user_id (FK), public_key (base64url),
+              counter (replay protection), transports, device type, backed_up flag
+- auth_challenges: username, flow_type (register/auth), challenge (base64url),
+                  expires_at (TTL enforcement)
+
+Thread safety:
+- All database operations use a threading.Lock to ensure serial access
+- SQLite is opened with check_same_thread=False but internally serialized
+
+Design patterns:
+- User handles are UUIDs, not usernames, enabling username changes without
+  invalidating credentials
+- Challenges are single-use, deleted after verification
+- Signature counter is updated on each successful authentication
+- Multiple credentials per user support username-based multi-device enrollment
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,3 +1,22 @@
+"""Flask application factory and WebAuthn ceremony handlers.
+
+This module implements the core WebAuthn flows:
+- Registration (attestation ceremony): register new passkeys
+- Authentication (assertion ceremony): verify existing passkeys
+
+Each route verifies the appropriate WebAuthn data:
+- Challenge validity and TTL
+- Origin header matching
+- RP ID hash verification
+- Signature and user verification
+- Signature counter monotonicity (replay protection)
+
+Credential storage and multi-device support:
+- One user account can have multiple credentials
+- Multiple credentials per user enable same-username multi-device login
+- RP ID and origin configuration determine cross-device credential reuse
+"""
+
 from __future__ import annotations
 
 import base64
@@ -200,7 +219,7 @@ def create_app(database: PasslessDatabase | None = None) -> Flask:
     app.secret_key = config.session_secret
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SECURE=config.node_env == "production",
+        SESSION_COOKIE_SECURE=config.app_env == "production",
         SESSION_COOKIE_SAMESITE="Lax",
         PERMANENT_SESSION_LIFETIME=60 * 60 * 6,
     )
