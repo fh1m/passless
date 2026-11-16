@@ -39,9 +39,11 @@ sequenceDiagram
   S->>B: session cookie → /app
 ```
 
-It was built as a course project (`instructions/` holds the brief), with one
-self-imposed rule: every rubric line is enforced in code and covered by a test.
-`python -m unittest` runs **25 tests**.
+It was built as a course project (`instructions/` holds the brief).
+[`REPORT.md`](REPORT.md) maps each requirement to where it's implemented, and
+`python -m unittest` runs **25 tests**, including rejections for an invalid
+origin, a missing challenge, an unknown credential, and a credential presented
+for the wrong user.
 
 ## Features
 
