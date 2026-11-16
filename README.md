@@ -1,6 +1,47 @@
 # Passless
 
-Passless is a Python/Flask proof-of-concept for passwordless WebAuthn authentication. It supports username-based registration, multiple passkeys per account, cross-browser login, and a protected page that shows authenticator details after sign-in.
+**Can a login have no secret worth stealing?**
+
+Passwords are a shared secret: you know it, the server knows (a hash of) it,
+and so does whoever breaches the server. Passless is a Python/Flask WebAuthn
+service that tries the other design. The secret never leaves your device, and
+the server keeps only something it's safe to lose.
+
+![Registering a passkey, then signing in with it](assets/ceremony.png)
+
+*Registered and signed in by a real Chrome with a virtual WebAuthn
+authenticator (`WebAuthn.addVirtualAuthenticator` over the DevTools protocol).
+No password was typed, because there isn't one.*
+
+## What the server actually keeps
+
+After that registration and one sign-in, here's the entire credential row in
+SQLite:
+
+| username | public_key_b64 | key length | counter | device_type |
+|---|---|---:|---:|---|
+| fh1m | `pQECAyYgASFYIKmUPLnH29V8…` | 103 chars (77 bytes, a COSE EC2 P-256 public key) | 2 | single_device |
+
+A public key. Steal the whole database and you can verify signatures. You can't
+make them. The counter is the second line of defence: it rose to 2 on the
+authenticator and on the server, and a cloned authenticator replaying an old
+count gets refused.
+
+```mermaid
+sequenceDiagram
+  participant B as Browser + authenticator
+  participant S as Passless (Flask)
+  B->>S: username
+  S->>B: challenge, RP ID, allowed credentials
+  Note over B: user verifies (biometric / PIN)<br/>private key signs challenge + origin + RP ID hash
+  B->>S: signature, authenticator data, counter
+  Note over S: check challenge, origin, RP ID hash,<br/>UP/UV flags, signature, counter > stored
+  S->>B: session cookie → /app
+```
+
+It was built as a course project (`instructions/` holds the brief), with one
+self-imposed rule: every rubric line is enforced in code and covered by a test.
+`python -m unittest` runs **25 tests**.
 
 ## Features
 
