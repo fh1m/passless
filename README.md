@@ -1,11 +1,22 @@
 # Passless
 
-**Can a login have no secret worth stealing?**
+**A Flask/WebAuthn course project exploring passkey registration and sign-in.**
 
-Passwords are a shared secret: you know it, the server knows (a hash of) it,
-and so does whoever breaches the server. Passless is a Python/Flask WebAuthn
-service that tries the other design. The secret never leaves your device, and
-the server keeps only something it's safe to lose.
+The relying party verifies a signature without receiving the passkey's private
+signing key. That removes the need for a server-side password verifier; it does
+not make account metadata, sessions or the server's session-signing secret safe
+to disclose. Synced passkeys also need a more careful description than “the
+secret never leaves one device.”
+
+## Status and limits
+
+At the reviewed application snapshot [`f29f73d`](https://github.com/fh1m/passless/tree/f29f73d5a56045c839d26abff66a5ecdb4dc52c8),
+additional credential enrollment does not adequately establish ownership of an
+existing account. A valid WebAuthn registration is not, by itself, permission
+to add a credential to that account. **This is coursework, not a production
+authentication service.** This documentation correction does not change or fix
+the application. The [technical review](https://fh1m.github.io/notes/passless/)
+separates the working browser ceremony from the incomplete account policy.
 
 ![Registering a passkey, then signing in with it](assets/ceremony.png)
 
@@ -22,10 +33,14 @@ SQLite:
 |---|---|---:|---:|---|
 | fh1m | `pQECAyYgASFYIKmUPLnH29V8…` | 103 chars (77 bytes, a COSE EC2 P-256 public key) | 2 | single_device |
 
-A public key. Steal the whole database and you can verify signatures. You can't
-make them. The counter is the second line of defence: it rose to 2 on the
-authenticator and on the server, and a cloned authenticator replaying an old
-count gets refused.
+The public key lets the server verify an assertion without holding the private
+signing key. The database still contains account identifiers and credential
+metadata worth protecting.
+
+The counter rose to 2 in this virtual-authenticator demonstration. It is not a
+universal clone detector: [WebAuthn's counter guidance](https://www.w3.org/TR/webauthn-2/#sctn-sign-counter)
+is conditional, and some authenticators report zero. Challenge freshness,
+signature verification and authorized account changes remain separate duties.
 
 ```mermaid
 sequenceDiagram
@@ -33,23 +48,23 @@ sequenceDiagram
   participant S as Passless (Flask)
   B->>S: username
   S->>B: challenge, RP ID, allowed credentials
-  Note over B: user verifies (biometric / PIN)<br/>private key signs challenge + origin + RP ID hash
-  B->>S: signature, authenticator data, counter
-  Note over S: check challenge, origin, RP ID hash,<br/>UP/UV flags, signature, counter > stored
+  Note over B: satisfy user-verification request<br/>sign authenticatorData and SHA-256(clientDataJSON)
+  B->>S: assertion: client data, authenticator data, signature
+  Note over S: check challenge, origin, RP ID hash,<br/>UP/UV flags, signature, applicable counter policy
   S->>B: session cookie → /app
 ```
 
 It was built as a course project (`instructions/` holds the brief).
-[`REPORT.md`](REPORT.md) maps each requirement to where it's implemented, and
-`python -m unittest` runs **25 tests**, including rejections for an invalid
-origin, a missing challenge, an unknown credential, and a credential presented
-for the wrong user.
+[`REPORT.md`](REPORT.md) maps the original requirements to their implementation.
+The reviewed snapshot's existing suite had **25 tests**, including invalid-origin,
+missing-challenge, unknown-credential and wrong-user rejections. Passing that
+suite did not establish the missing enrollment-ownership policy.
 
 ## Features
 
 - Username-first registration and login
-- Multiple credentials per username for same-user multi-device use
-- Server-side verification of challenge, origin, RP ID hash, user presence/verification, signature, and signature counter
+- Multiple credentials per username; existing-account enrollment authorization remains incomplete
+- Library-based verification of challenge, origin, RP ID hash, user presence/verification, signature and applicable counter policy
 - Protected authenticated page with username and authenticator metadata
 - Localhost, self-signed HTTPS, Cloudflare Tunnel, and ngrok support
 - Python-only backend; no Node.js build step required
@@ -151,7 +166,11 @@ Single test module:
 python -m unittest tests.test_app
 ```
 
-## Deployment modes
+## Development modes
+
+Use synthetic accounts for local demonstrations. Do not expose real accounts
+or treat the tunnel instructions as a production security recommendation while
+the enrollment boundary remains unresolved.
 
 - **Localhost:** `RP_ID=localhost`, `EXPECTED_ORIGIN=http://localhost:3000`
 - **Local HTTPS:** enable `HTTPS_ENABLED=true` and provide certificate paths
