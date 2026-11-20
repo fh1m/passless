@@ -1,0 +1,14 @@
+README.md
+  h_b19ddd3ca98e3d 3,5-19,36-43,51-53,58-61,66-67,169-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "777d729a451ec94e730c79f136b6491328b70682",
+  "prompts": {},
+  "humans": {
+    "h_b19ddd3ca98e3d": {
+      "author": "Fahim Faisal <fahim.2002.faisal@gmail.com>"
+    }
+  }
+}
